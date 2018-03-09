@@ -3,6 +3,10 @@ import json
 from urllib.parse import urlencode
 from requests.exceptions import RequestException
 from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+import os
+from hashlib import md5
 # 返回索引页面HTML
 def get_page_index(offset,keyword):
     data = {
@@ -31,27 +35,55 @@ def parse_page_index(html):
         for item in data.get('data'):
             yield item.get('article_url')
 # 返回大图页面的html
-def get_page_detail(url):
-    try:
-        data = {'User-Agent':'Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:58.0) Gecko/20100101 Firefox/58.0'}
-        cookie = {'Cookie':'tt_webid=6530495836253488644; WEATHER_CITY=%E5%8C%97%'}
-        response = requests.get(url,data=data,cookies=cookie)
-        if response.status_code == 200:
-            return response.text
-        return None
-    except RequestException:
-        print('请求详情页出错')
-        return None    
+def get_page_detail(url):    
+    driver = webdriver.Firefox()
+    driver.get(url)
+    WebDriverWait(driver,2)    
+    source =  driver.page_source
+    driver.quit()
+    return source
+
+  
 #返回大图页上图片的链接和标题
 def parse_page_detail(html):
     soup = BeautifulSoup(html,'lxml')
-    title = soup.select('title')[0].get_text()
+    src_list=[]
+    title=''
+    try:
+        for item in soup.find('div',class_='article-content'):
+            for pic in item.find_all('img'):
+                src_list.append(pic.get('src'))
+        title = soup.select('title')[0].get_text()
+    except:
+        pass
+    return title,src_list
 
+def pic_download(title,pic_url,img_src):
+    if pic_url:
+        current_path = os.getcwd()
+        path = current_path+'/{}'.format(img_src[-8:-1])
+        if not os.path.exists(path):
+            os.makedirs(path)
+        for image in pic_url:
+            response = requests.get(image)
+            if response.status_code==200:
+                content = response.content
+                file_path = path+'/'+'{}'.format(md5(content).hexdigest())+'.jpg'
+                if not os.path.exists(file_path):
+                    with open(file_path,'wb') as f:
+                        f.write(content)
+                        f.close()
+                        print(file_path,'下载完成')
+            else:
+                print('图片下载出错',image)
 def main():
     html = get_page_index(0,'街拍')
-    # for item in parse_page_index(html):
-    #     print(item)
-    detail_html = get_page_detail('http://toutiao.com/group/6335650371411902721/')   
-    print(detail_html)
+    for item in parse_page_index(html): 
+        if item:
+            detail_html = get_page_detail(item)   
+            title,pic_src = parse_page_detail(detail_html)
+            pic_download(title,pic_src,item)
+        else:
+            pass
 if __name__=='__main__':
     main()
